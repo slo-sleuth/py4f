@@ -18,18 +18,18 @@ class File(Path):
     # hack needed to inherit from pathlib
     _flavour = Path('.')._flavour
 
-    def __init__(self, follow_links: bool = False) -> None:
+    def __init__(self, path: str) -> None:
         """
         Initializes File() object from a string or a Path object
         with basic file information, e.g, name, size date stamps, etc.  Files
         are not automatically typed, or hashed as this can take substantial time
         and may not be needed in all circumstances.
         """
-        Path.__init__(self)
-        self.relative_path = str(self)
+        super().__init__()
+        self.relative_path = str(path)
         self.absolute_path = str(self.absolute())
         self.extension = self.suffix
-        self.status = self.__get_status(follow_links)
+        self.status = self.__get_status()
         self.size = self.status.st_size
         self.blocks = self.status.st_blocks
         self.blocksize = self.status.st_blksize
@@ -77,11 +77,12 @@ class File(Path):
         else:
             return magic.from_file(str(self), mime)
 
-    def __get_status(self, follow_link: bool):
+    def __get_status(self):
         """Private method to return file stats."""
-        if follow_link:
+        if self.is_symlink():
+            return self.lstat()
+        else:
             return self.stat()
-        return self.lstat()
 
     def get_md5(self) -> str:
         """Returns and stores the hexadecimal MD5 hash digest attribute of the
@@ -116,7 +117,7 @@ class File(Path):
         self.mime_type = self.__get_magic(mime=True)
         return self.mime_type
 
-    def print_status(self) -> str:
+    def print_status(self) -> None:
         string = (
             f'  File: {self.absolute_path}\n'
             f'  Size: {self.size}\tBlocks: {self.blocks}\tBlock Sz: {self.blocksize}\n'
@@ -127,33 +128,22 @@ class File(Path):
             f'Change: {self.changed}\n'
             f'Create: {self.created}'
         )
-        return string
+        print(string)
+        return
 
 
-def __list_dir(directory: Path) -> list:
-    """Private function to return the contents of directory."""
-    contents = list()
-    for item in directory.iterdir():
-        contents.append(File(item))
-    return contents
-
-
-def get_files(path: str, recursive: bool = False) -> list:
+def get_files(path: str, pattern: str = '*', recursive: bool = True):
     """
-    Return list of File objects from path.  If path is a directory, all files
-    from the directory are returned and optionally recurses into subdirectory.
+    Return generator of File objects from path matching pattern, with optional
+    recursion into subdirectories.  If path is a file, the File object for that
+    path is returned.
     """
-    p = Path(path)
-    if not p.exists():
-        raise OSError(f'Path does not exist: {p}')
+    p = File(path)
 
-    files = list()
     if p.is_file():
-        files.append(File(p))
-    elif p.is_dir():
-        files += __list_dir(p)
-        if recursive:
-            for item in files:
-                if item.is_dir():
-                    files += __list_dir(item)
-    return files
+        return p
+    if recursive:
+        for f in p.rglob(pattern):
+            yield File(f)
+    for f in p.glob(pattern):
+        yield File(f)
